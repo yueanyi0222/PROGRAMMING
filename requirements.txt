@@ -1,7 +1,7 @@
 streamlit
 pandas
-geopandas
-shapely
-matplotlib
 numpy
-contextily
+folium
+streamlit-folium
+matplotlib
+pyproj
