@@ -7,8 +7,13 @@ from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 from pyproj import Transformer 
 
-# --- KONFIGURASI KATA LALUAN ---
+# --- KONFIGURASI KATA LALUAN & ID (TAMBAHAN) ---
 KATA_LALUAN_BETUL = "admin1060"
+SENARAI_USER = {
+    "1": "OOI SUE ANN",
+    "2": "WONG YUEAN YI",
+    "3": "CHAN BOON YEAH"
+}
 
 # --- FUNGSI UTAMA ---
 def to_dms(deg):
@@ -41,17 +46,29 @@ def kira_luas(x, y):
 
 # --- FUNGSI PENUKARAN KOORDINAT TEPAT (UTM ke WGS84) ---
 def grid_to_latlong(easting, northing, epsg_code):
-    # Transformer dari UTM ke WGS84 (EPSG:4326)
-    transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
-    lon, lat = transformer.transform(easting, northing)
-    return lat, lon
+    try:
+        # Transformer dari UTM ke WGS84 (EPSG:4326)
+        transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
+        lon, lat = transformer.transform(easting, northing)
+        return lat, lon
+    except:
+        return None, None
 
 # --- UI STREAMLIT ---
 st.set_page_config(page_title="SISTEM PENGURUSAN MAKLUMAT TANAH", layout="wide")
 
-# --- SISTEM LOGIN ---
+# --- SISTEM LOGIN (DIKEMASKINI: TAMBAH LOGIK SALAH 3 KALI) ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
+if "user_name" not in st.session_state:
+    st.session_state["user_name"] = ""
+# Tambahan state untuk menjejak baki percubaan
+if "attempts" not in st.session_state:
+    st.session_state["attempts"] = 0
+if "current_password" not in st.session_state:
+    st.session_state["current_password"] = KATA_LALUAN_BETUL
+if "show_reset" not in st.session_state:
+    st.session_state["show_reset"] = False
 
 if not st.session_state["authenticated"]:
     # LOGO BESAR DI HALAMAN LOGIN
@@ -61,21 +78,51 @@ if not st.session_state["authenticated"]:
         st.warning("Logo puo-1.png tidak ditemui")
     st.markdown("# 🏛️ SISTEM PENGURUSAN MAKLUMAT TANAH")
     st.markdown("---")
-    st.markdown("### 🔐 Sila Log Masuk")
-    password_input = st.text_input("Masukkan kata laluan:", type="password")
     
-    if st.button("Log Masuk"):
-        if password_input == KATA_LALUAN_BETUL:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Kata laluan salah! Sila cuba lagi.")
-    st.stop() # Hentikan proses jika belum log masuk
+    # JIKA USER SALAH 3 KALI, PAPAR FORM TUKAR PASSWORD
+    if st.session_state["show_reset"]:
+        st.warning("⚠️ Anda telah salah kata laluan 3 kali. Sila tetapkan kata laluan baharu.")
+        new_pw = st.text_input("Kata laluan baharu:", type="password")
+        confirm_pw = st.text_input("Sahkan kata laluan baharu:", type="password")
+        if st.button("Simpan & Log Masuk"):
+            if new_pw == confirm_pw and new_pw != "":
+                st.session_state["current_password"] = new_pw
+                st.session_state["attempts"] = 0
+                st.session_state["show_reset"] = False
+                st.success("Berjaya! Sila log masuk semula.")
+                st.rerun()
+            else:
+                st.error("Ralat! Pastikan kata laluan sepadan.")
+    else:
+        # Tambahan Input ID
+        user_id = st.text_input("Masukkan ID Pengguna:")
+        password_input = st.text_input("Masukkan kata laluan:", type="password")
+        
+        if st.button("Log Masuk"):
+            if user_id in SENARAI_USER:
+                if password_input == st.session_state["current_password"]:
+                    st.session_state["authenticated"] = True
+                    st.session_state["user_name"] = SENARAI_USER[user_id]
+                    st.session_state["attempts"] = 0
+                    st.rerun()
+                else:
+                    st.session_state["attempts"] += 1
+                    if st.session_state["attempts"] >= 3:
+                        st.session_state["show_reset"] = True
+                        st.rerun()
+                    else:
+                        st.error(f"Kata laluan salah! Baki percubaan: {3 - st.session_state['attempts']}")
+            else:
+                st.error("ID Pengguna tidak sah!")
+    st.stop() 
 
 # --- JIKA SUDAH LOGIN, PAPAR SISTEM UTAMA ---
-st.sidebar.success("✅ Log Masuk Berjaya")
+st.sidebar.success(f"✅ Log Masuk Berjaya")
+st.sidebar.markdown(f"### Hi, {st.session_state['user_name']}! 👋")
+
 if st.sidebar.button("Log Keluar"):
     st.session_state["authenticated"] = False
+    st.session_state["user_name"] = ""
     st.rerun()
 
 # --- SIDEBAR ---
@@ -88,6 +135,11 @@ with st.sidebar.expander("🌍 Tetapan Peta", expanded=True):
     # INPUT UNTUK EPSG CODE (Contoh: WGS84/UTM zone 47N = 32647)
     st.caption("Pilih Projeksi Grid (Contoh: WGS84/UTM zone 47N = 32647)")
     epsg_code = st.number_input("EPSG Code", value=32647)
+
+# --- TAMBAHAN PEMILIH WARNA ---
+with st.sidebar.expander("🎨 Tetapan Warna", expanded=True):
+    warna_lot = st.color_picker("Pilih Warna Lot", "#000000" if not mod_satelit else "#FFFFFF")
+    warna_no_stn = st.color_picker("Pilih Warna No. Stesen", "#FF0000" if not mod_satelit else "#FFFF00")
 
 with st.sidebar.expander("🏷️ Tetapan Label", expanded=True):
     show_point = st.checkbox("Papar Point Stesen", value=True)
@@ -110,7 +162,7 @@ with col_logo:
     except:
         st.warning("Logo puo-1.png tidak ditemui")
 with col_title:
-    st.markdown("### 📐 Visualisasi Poligon (Sistem Utama)") 
+    st.markdown(f"### 📐 Visualisasi Poligon (Hi {st.session_state['user_name']})") 
     st.caption("Jabatan Kejuruteraan Geomatik - Politeknik Ungku Omar")
 
 st.markdown("---")
@@ -119,6 +171,7 @@ uploaded_file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type=["c
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
+    df.columns = df.columns.str.strip() # Buang space pada nama kolum
     
     if 'E' in df.columns and 'N' in df.columns:
         luas = kira_luas(df['E'].values, df['N'].values)
@@ -140,7 +193,8 @@ if uploaded_file is not None:
 
         # TUKAR SEMUA KOORDINAT KE LAT/LONG TERLEBIH DAHULU
         try:
-            df['lat'], df['lon'] = zip(*df.apply(lambda row: grid_to_latlong(row['E'], row['N'], epsg_code), axis=1))
+            coords = df.apply(lambda row: grid_to_latlong(row['E'], row['N'], epsg_code), axis=1)
+            df['lat'], df['lon'] = zip(*coords)
         except Exception as e:
             st.error(f"Ralat penukaran koordinat: {e}")
             st.stop()
@@ -152,7 +206,7 @@ if uploaded_file is not None:
             
             x_coords = list(df['E']) + [df['E'].iloc[0]]
             y_coords = list(df['N']) + [df['N'].iloc[0]]
-            ax.plot(x_coords, y_coords, color='black', linewidth=1.5, zorder=2)
+            ax.plot(x_coords, y_coords, color=warna_lot, linewidth=1.5, zorder=2) # TAMBAH warna_lot
             ax.fill(x_coords, y_coords, color='cyan', alpha=0.1)
 
             cx, cy = df['E'].mean(), df['N'].mean()
@@ -165,7 +219,7 @@ if uploaded_file is not None:
                     vx, vy = row['E'] - cx, row['N'] - cy
                     mag = np.sqrt(vx**2 + vy**2) if np.sqrt(vx**2 + vy**2) != 0 else 1
                     ax.text(row['E'] + (vx/mag)*1.5, row['N'] + (vy/mag)*1.5, 
-                            str(int(row['STN'])), fontsize=saiz_stn, fontweight='bold', ha='center')
+                            str(int(row['STN'])), fontsize=saiz_stn, fontweight='bold', ha='center', color=warna_no_stn) # TAMBAH warna_no_stn
 
             # Bearing & Jarak (Parallel/Rotated)
             if show_brg_dist:
@@ -202,11 +256,26 @@ if uploaded_file is not None:
             m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=20, max_zoom=22,
                             tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', attr='Google Satellite')
 
-            # Polygon
-            folium.Polygon(locations=[[r.lat, r.lon] for i,r in df.iterrows()], 
-                           color="white", weight=2, fill=True, fill_opacity=0.1).add_to(m)
+            # TAMBAHAN: Popup maklumat lot semasa tekan kawasan poligon
+            popup_lot = folium.Popup(f"""
+                <div style='font-family: Arial; width: 150px;'>
+                    <h4 style='margin-bottom:5px; color:blue;'>Info Lot</h4>
+                    <b>Luas:</b> {luas:.3f} m²<br>
+                    <b>Perimeter:</b> {perimeter:.3f} m<br>
+                    <b>Sempadan:</b> {bil_garisan} Garisan
+                </div>
+            """, max_width=200)
+
+            folium.Polygon(
+                locations=[[r.lat, r.lon] for i,r in df.iterrows()], 
+                color=warna_lot, # TAMBAH warna_lot
+                weight=2, 
+                fill=True, 
+                fill_opacity=0.1,
+                popup=popup_lot
+            ).add_to(m)
             
-            m.fit_bounds([[df.lat.min(), df.lon.min()], [df.lat.max(), df.lon.max()]], padding=(margin_val*2, margin_val*2))
+            m.fit_bounds([[df.lat.min(), df.lon.min()], [df.lat.max(), df.lon.max()]], padding=(margin_val, margin_val))
 
             # --- Label Stesen di LUAR Lot ---
             centroid_lat = df['lat'].mean()
@@ -214,18 +283,32 @@ if uploaded_file is not None:
             
             for i, row in df.iterrows():
                 if show_point:
-                    folium.CircleMarker([row.lat, row.lon], radius=saiz_point, color="red", fill=True).add_to(m)
+                    # TAMBAHAN: Popup koordinat semasa tekan stesen
+                    popup_stn = folium.Popup(f"""
+                        <div style='font-family: Arial; width: 130px;'>
+                            <b>Stesen:</b> {int(row.STN)}<br>
+                            <hr style='margin:5px 0;'>
+                            <b>E:</b> {row.E:.3f}<br>
+                            <b>N:</b> {row.N:.3f}<br>
+                            <b>Lat:</b> {row.lat:.6f}<br>
+                            <b>Lon:</b> {row.lon:.6f}
+                        </div>
+                    """, max_width=150)
+
+                    folium.CircleMarker(
+                        [row.lat, row.lon], 
+                        radius=saiz_point, 
+                        color="red", 
+                        fill=True,
+                        popup=popup_stn
+                    ).add_to(m)
                 
                 if show_labels:
-                    # Kira vektor dari centroid ke stesen
                     d_lat = row.lat - centroid_lat
                     d_lon = row.lon - centroid_lon
-                    
-                    # Normalisasi vektor untuk mendapatkan arah
                     mag = np.sqrt(d_lat**2 + d_lon**2)
-                    if mag == 0: mag = 1 # Elak division by zero
+                    if mag == 0: mag = 1 
                     
-                    # Tolak label keluar sedikit (offset)
                     offset_factor = 0.00001 
                     label_lat = row.lat + (d_lat / mag) * offset_factor
                     label_lon = row.lon + (d_lon / mag) * offset_factor
@@ -235,56 +318,48 @@ if uploaded_file is not None:
                         icon=folium.DivIcon(html=f'''
                             <div style="
                                 font-size:{saiz_stn}pt; 
-                                color:yellow; 
+                                color:{warna_no_stn}; 
                                 font-weight:bold; 
                                 text-shadow:2px 2px black;
                                 white-space: nowrap;
                             ">
                                 {int(row.STN)}
                             </div>
-                        ''')
+                        ''') # TAMBAH warna_no_stn
                     ).add_to(m)
 
             # --- Bearing & Jarak di Mod Satelit ---
             if show_brg_dist:
                 for i in range(bil_garisan):
-                    p1, p2 = df.iloc[i], df.iloc[(i + 1) % bil_garisan]
-                    brg, dist_v, angle = kira_bearing_jarak([p1.E, p1.N], [p2.E, p2.N])
+                    p1 = df.iloc[i]
+                    p2 = df.iloc[(i + 1) % bil_garisan]
                     
-                    offset = 12 
+                    brg_str, dist_val, txt_rot = kira_bearing_jarak([p1.E, p1.N], [p2.E, p2.N])
+                    mid_lat, mid_lon = (p1.lat + p2.lat)/2, (p1.lon + p2.lon)/2
                     
-                    bearing_html = f'''
+                    label_html = f'''
                         <div style="
-                            text-align:center; 
-                            width:150px; 
-                            transform: translate(-50%, -{offset*2}px) rotate({angle}deg); 
-                            transform-origin: center center;
-                            white-space: nowrap;
-                        ">
-                            <b style="font-size:{saiz_brg}pt; color:#ff4d4d; text-shadow:1px 1px black; background-color: rgba(255,255,255,0.4); border-radius:3px;">{brg}</b>
+                            transform: rotate({-txt_rot}deg); 
+                            white-space: nowrap; 
+                            text-align: center;
+                            pointer-events: none;">
+                            <div style="color: #ff4d4d; font-size: {saiz_brg}pt; font-weight: bold; text-shadow: 1px 1px black; margin-bottom: -2px;">
+                                {brg_str}
+                            </div>
+                            <div style="color: #4da6ff; font-size: {saiz_brg-1}pt; font-weight: bold; text-shadow: 1px 1px black;">
+                                {dist_val:.2f}m
+                            </div>
                         </div>
                     '''
                     
-                    jarak_html = f'''
-                        <div style="
-                            text-align:center; 
-                            width:150px; 
-                            transform: translate(-50%, {offset}px) rotate({angle}deg); 
-                            transform-origin: center center;
-                            white-space: nowrap;
-                        ">
-                            <b style="font-size:{saiz_brg}pt; color:#4da6ff; text-shadow:1px 1px black; background-color: rgba(255,255,255,0.4); border-radius:3px;">{dist_v:.2f}m</b>
-                        </div>
-                    '''
-                    
-                    mid_lat = (p1.lat + p2.lat)/2
-                    mid_lon = (p1.lon + p2.lon)/2
-                    
-                    folium.map.Marker([mid_lat, mid_lon],
-                        icon=folium.DivIcon(html=bearing_html)).add_to(m)
-                    
-                    folium.map.Marker([mid_lat, mid_lon],
-                        icon=folium.DivIcon(html=jarak_html)).add_to(m)
+                    folium.Marker(
+                        [mid_lat, mid_lon],
+                        icon=folium.DivIcon(
+                            icon_size=(150,36),
+                            icon_anchor=(75,18),
+                            html=label_html
+                        )
+                    ).add_to(m)
 
             # --- Luas di Tengah ---
             if show_luas_center:
@@ -311,15 +386,11 @@ if uploaded_file is not None:
         # --- 📋 JADUAL KOORDINAT STESEN ---
         st.markdown("---")
         st.markdown("### 📋 Jadual Koordinat Stesen")
-        
-        # Papar jadual dengan Lat/Lon yang telah ditukar
         st.dataframe(df[['STN', 'E', 'N', 'lat', 'lon']], use_container_width=True)
 
         # --- EKSPORT DATA ---
         st.sidebar.divider()
         if st.sidebar.button("🌍 Sediakan Fail Eksport"):
-            
-            # --- GEOJSON FEATURE UNTUK POLIGON ---
             poly_coords = [[row.lon, row.lat] for i,row in df.iterrows()]
             poly_coords.append(poly_coords[0])
             
@@ -336,7 +407,6 @@ if uploaded_file is not None:
                 }
             }
             
-            # --- GEOJSON FEATURES UNTUK TITIK (STESEN) ---
             point_features = []
             for i, row in df.iterrows():
                 point_feature = {
@@ -353,9 +423,7 @@ if uploaded_file is not None:
                 }
                 point_features.append(point_feature)
             
-            # Gabungkan Poligon dan Titik
             all_features = [polygon_feature] + point_features
-            
             geojson_data = {
                 "type": "FeatureCollection",
                 "features": all_features
