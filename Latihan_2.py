@@ -2,13 +2,29 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import json
+import os # TAMBAHAN: Untuk simpan fail kata laluan
 import folium
 from streamlit_folium import st_folium
 import matplotlib.pyplot as plt
 from pyproj import Transformer 
 
-# --- KONFIGURASI KATA LALUAN & ID (TAMBAHAN) ---
-KATA_LALUAN_BETUL = "admin1060"
+# --- KONFIGURASI KATA LALUAN & ID (DIKEMASKINI) ---
+CONFIG_FILE = "password_config.json"
+KATA_LALUAN_DEFAULT = "admin1060"
+
+# Fungsi untuk muat kata laluan dari fail jika ada
+def load_pw():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            data = json.load(f)
+            return data.get("password", KATA_LALUAN_DEFAULT)
+    return KATA_LALUAN_DEFAULT
+
+# Fungsi untuk simpan kata laluan baharu ke fail
+def save_pw(new_pw):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump({"password": new_pw}, f)
+
 SENARAI_USER = {
     "1": "OOI SUE ANN",
     "2": "WONG YUEAN YI",
@@ -57,18 +73,18 @@ def grid_to_latlong(easting, northing, epsg_code):
 # --- UI STREAMLIT ---
 st.set_page_config(page_title="SISTEM PENGURUSAN MAKLUMAT TANAH", layout="wide")
 
-# --- SISTEM LOGIN (DIKEMASKINI: TAMBAH LOGIK SALAH 3 KALI) ---
+# --- SISTEM LOGIN (DIKEMASKINI: SIMPAN PASSWORD SECARA KEKAL) ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "user_name" not in st.session_state:
     st.session_state["user_name"] = ""
-# Tambahan state untuk menjejak baki percubaan
 if "attempts" not in st.session_state:
     st.session_state["attempts"] = 0
-if "current_password" not in st.session_state:
-    st.session_state["current_password"] = KATA_LALUAN_BETUL
 if "show_reset" not in st.session_state:
     st.session_state["show_reset"] = False
+
+# Sentiasa ambil password terkini dari fail
+current_password_stored = load_pw()
 
 if not st.session_state["authenticated"]:
     # LOGO BESAR DI HALAMAN LOGIN
@@ -86,10 +102,10 @@ if not st.session_state["authenticated"]:
         confirm_pw = st.text_input("Sahkan kata laluan baharu:", type="password")
         if st.button("Simpan & Log Masuk"):
             if new_pw == confirm_pw and new_pw != "":
-                st.session_state["current_password"] = new_pw
+                save_pw(new_pw) # SIMPAN KE FAIL SECARA KEKAL
                 st.session_state["attempts"] = 0
                 st.session_state["show_reset"] = False
-                st.success("Berjaya! Sila log masuk semula.")
+                st.success("Kata laluan baharu disimpan! Sila log masuk semula.")
                 st.rerun()
             else:
                 st.error("Ralat! Pastikan kata laluan sepadan.")
@@ -100,7 +116,7 @@ if not st.session_state["authenticated"]:
         
         if st.button("Log Masuk"):
             if user_id in SENARAI_USER:
-                if password_input == st.session_state["current_password"]:
+                if password_input == current_password_stored: # Guna password dari fail
                     st.session_state["authenticated"] = True
                     st.session_state["user_name"] = SENARAI_USER[user_id]
                     st.session_state["attempts"] = 0
@@ -206,7 +222,7 @@ if uploaded_file is not None:
             
             x_coords = list(df['E']) + [df['E'].iloc[0]]
             y_coords = list(df['N']) + [df['N'].iloc[0]]
-            ax.plot(x_coords, y_coords, color=warna_lot, linewidth=1.5, zorder=2) # TAMBAH warna_lot
+            ax.plot(x_coords, y_coords, color=warna_lot, linewidth=1.5, zorder=2)
             ax.fill(x_coords, y_coords, color='cyan', alpha=0.1)
 
             cx, cy = df['E'].mean(), df['N'].mean()
@@ -219,7 +235,7 @@ if uploaded_file is not None:
                     vx, vy = row['E'] - cx, row['N'] - cy
                     mag = np.sqrt(vx**2 + vy**2) if np.sqrt(vx**2 + vy**2) != 0 else 1
                     ax.text(row['E'] + (vx/mag)*1.5, row['N'] + (vy/mag)*1.5, 
-                            str(int(row['STN'])), fontsize=saiz_stn, fontweight='bold', ha='center', color=warna_no_stn) # TAMBAH warna_no_stn
+                            str(int(row['STN'])), fontsize=saiz_stn, fontweight='bold', ha='center', color=warna_no_stn)
 
             # Bearing & Jarak (Parallel/Rotated)
             if show_brg_dist:
@@ -256,7 +272,6 @@ if uploaded_file is not None:
             m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=20, max_zoom=22,
                             tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', attr='Google Satellite')
 
-            # TAMBAHAN: Popup maklumat lot semasa tekan kawasan poligon
             popup_lot = folium.Popup(f"""
                 <div style='font-family: Arial; width: 150px;'>
                     <h4 style='margin-bottom:5px; color:blue;'>Info Lot</h4>
@@ -268,7 +283,7 @@ if uploaded_file is not None:
 
             folium.Polygon(
                 locations=[[r.lat, r.lon] for i,r in df.iterrows()], 
-                color=warna_lot, # TAMBAH warna_lot
+                color=warna_lot, 
                 weight=2, 
                 fill=True, 
                 fill_opacity=0.1,
@@ -277,13 +292,11 @@ if uploaded_file is not None:
             
             m.fit_bounds([[df.lat.min(), df.lon.min()], [df.lat.max(), df.lon.max()]], padding=(margin_val, margin_val))
 
-            # --- Label Stesen di LUAR Lot ---
             centroid_lat = df['lat'].mean()
             centroid_lon = df['lon'].mean()
             
             for i, row in df.iterrows():
                 if show_point:
-                    # TAMBAHAN: Popup koordinat semasa tekan stesen
                     popup_stn = folium.Popup(f"""
                         <div style='font-family: Arial; width: 130px;'>
                             <b>Stesen:</b> {int(row.STN)}<br>
@@ -325,10 +338,9 @@ if uploaded_file is not None:
                             ">
                                 {int(row.STN)}
                             </div>
-                        ''') # TAMBAH warna_no_stn
+                        ''')
                     ).add_to(m)
 
-            # --- Bearing & Jarak di Mod Satelit ---
             if show_brg_dist:
                 for i in range(bil_garisan):
                     p1 = df.iloc[i]
@@ -361,7 +373,6 @@ if uploaded_file is not None:
                         )
                     ).add_to(m)
 
-            # --- Luas di Tengah ---
             if show_luas_center:
                 folium.map.Marker([centroid_lat, centroid_lon],
                     icon=folium.DivIcon(html=f'''
@@ -383,12 +394,10 @@ if uploaded_file is not None:
 
             st_folium(m, width="100%", height=650)
             
-        # --- 📋 JADUAL KOORDINAT STESEN ---
         st.markdown("---")
         st.markdown("### 📋 Jadual Koordinat Stesen")
         st.dataframe(df[['STN', 'E', 'N', 'lat', 'lon']], use_container_width=True)
 
-        # --- EKSPORT DATA ---
         st.sidebar.divider()
         if st.sidebar.button("🌍 Sediakan Fail Eksport"):
             poly_coords = [[row.lon, row.lat] for i,row in df.iterrows()]
