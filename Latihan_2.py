@@ -73,7 +73,7 @@ def grid_to_latlong(easting, northing, epsg_code):
 # --- UI STREAMLIT ---
 st.set_page_config(page_title="SISTEM PENGURUSAN MAKLUMAT TANAH", layout="wide")
 
-# --- SISTEM LOGIN (DIKEMASKINI: SIMPAN PASSWORD SECARA KEKAL) ---
+# --- SISTEM LOGIN ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 if "user_name" not in st.session_state:
@@ -145,7 +145,25 @@ if st.sidebar.button("Log Keluar"):
 st.sidebar.header("🛠️ Menu Tetapan")
 
 with st.sidebar.expander("🌍 Tetapan Peta", expanded=True):
-    mod_satelit = st.toggle("Aktifkan Google Satellite", value=False)
+    mod_satelit = st.toggle("Aktifkan Peta Google", value=False)
+    
+    # --- TAMBAHAN: PILIHAN JENIS PETA GOOGLE ---
+    if mod_satelit:
+        jenis_peta = st.selectbox("Jenis Peta Google", 
+                                  ["Satellite (Satelit Sahaja)", 
+                                   "Hybrid (Satelit + Jalan)", 
+                                   "Terrain (Muka Bumi)", 
+                                   "Roadmap (Jalan Raya)"])
+        
+        # Mapping lyrs parameter Google
+        map_types = {
+            "Satellite (Satelit Sahaja)": "s",
+            "Hybrid (Satelit + Jalan)": "y",
+            "Terrain (Muka Bumi)": "p",
+            "Roadmap (Jalan Raya)": "m"
+        }
+        google_lyr = map_types[jenis_peta]
+    
     margin_val = st.slider("Margin Lot (Zum Keluar)", 2, 30, 10)
     
     # INPUT UNTUK EPSG CODE (Contoh: WGS84/UTM zone 47N = 32647)
@@ -270,7 +288,8 @@ if uploaded_file is not None:
         else:
             # --- MOD SATELIT (Folium) ---
             m = folium.Map(location=[df['lat'].mean(), df['lon'].mean()], zoom_start=20, max_zoom=22,
-                            tiles='https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', attr='Google Satellite')
+                            tiles=f'https://mt1.google.com/vt/lyrs={google_lyr}&x={{x}}&y={{y}}&z={{z}}', 
+                            attr='Google')
 
             popup_lot = folium.Popup(f"""
                 <div style='font-family: Arial; width: 150px;'>
